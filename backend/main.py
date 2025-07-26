@@ -75,12 +75,28 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
     query_params = dict(request.query_params)
     shop = query_params.get('shop')
     code = query_params.get('code')
+    state = query_params.get('state')
     
     if not shop or not code:
         raise HTTPException(status_code=400, detail="Missing shop or code")
     
+    # Verify state to prevent CSRF attacks
+    if not state or state not in oauth_states:
+        raise HTTPException(status_code=400, detail="Invalid state parameter")
+    
+    # Verify shop matches state
+    if oauth_states[state] != shop:
+        raise HTTPException(status_code=400, detail="Shop domain mismatch")
+    
+    # Clean up state
+    del oauth_states[state]
+    
     # Exchange code for access token
-    token_data = {'client_id': SHOPIFY_API_KEY, 'client_secret': SHOPIFY_API_SECRET, 'code': code}
+    token_data = {
+        'client_id': SHOPIFY_API_KEY, 
+        'client_secret': SHOPIFY_API_SECRET, 
+        'code': code
+    }
     
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -98,7 +114,10 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
             if 'access_token=' in response.text:
                 from urllib.parse import parse_qs
                 parsed = parse_qs(response.text)
-                token_response = {'access_token': parsed.get('access_token', [''])[0], 'scope': parsed.get('scope', [''])[0]}
+                token_response = {
+                    'access_token': parsed.get('access_token', [''])[0], 
+                    'scope': parsed.get('scope', [''])[0]
+                }
             else:
                 raise HTTPException(status_code=400, detail="Invalid OAuth response")
     
@@ -108,21 +127,25 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
         existing_shop.access_token = token_response['access_token']
         existing_shop.scope = token_response.get('scope', SHOPIFY_SCOPES)
     else:
-        new_shop = Shop(shop_domain=shop, access_token=token_response['access_token'], scope=token_response.get('scope', SHOPIFY_SCOPES))
+        new_shop = Shop(
+            shop_domain=shop, 
+            access_token=token_response['access_token'], 
+            scope=token_response.get('scope', SHOPIFY_SCOPES)
+        )
         session.add(new_shop)
     session.commit()
     
-    # Register webhooks immediately
-    await register_webhooks(shop, token_response['access_token'])
+    # Register webhooks (don't await to speed up response)
+    import asyncio
+    asyncio.create_task(register_webhooks(shop, token_response['access_token']))
     
-    # Extract shop name from domain (remove .myshopify.com)
-    shop_name = shop.replace('.myshopify.com', '')
-    
-    # Redirect to the expected URL format for automated checks
-    # This is the format Shopify automated checks expect
-    expected_url = f"https://admin.shopify.com/store/{shop_name}/app/grant"
-    
-    return RedirectResponse(url=expected_url, status_code=302)
+    # Generate a user ID for this installation
+    user_id = str(uuid.uuid4())
+    encoded_user_id = base64.urlsafe_b64encode(user_id.encode()).decode()
+
+    redirect_url = f"https://app.quickinsights.ai/shopify?auth=success&uid={encoded_user_id}&shop={quote(shop)}"
+
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 async def register_webhooks(shop: str, access_token: str):
     webhooks = [
