@@ -176,7 +176,7 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
     user_id = str(uuid.uuid4())
     encoded_user_id = base64.urlsafe_b64encode(user_id.encode()).decode()
 
-    redirect_url = f"https://app.quickinsights.ai/shopify?auth=success&uid={encoded_user_id}&shop={quote(shop)}"
+    redirect_url = f"https://app.quickinsights.ai/login?auth=success&uid={encoded_user_id}&shop={quote(shop)}"
 
     return RedirectResponse(url=redirect_url, status_code=302)
 
