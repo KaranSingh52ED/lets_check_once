@@ -136,7 +136,8 @@ async def auth(shop: str):
         'client_id': SHOPIFY_API_KEY,
         'scope': SHOPIFY_SCOPES,
         'redirect_uri': f"{APP_URL}/auth/callback",
-        'state': state
+        'state': state,
+        'grant_options[]': 'per-user',  # Optional, use if you want per-user access
     }
     
     auth_url = f"https://{shop}/admin/oauth/authorize?{urlencode(params)}"
