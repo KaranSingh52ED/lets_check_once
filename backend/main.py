@@ -240,7 +240,7 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
     
     # Redirect to external app with success parameters (Triple Whale style)
     redirect_url = (
-        f"https://app.quickinsights.ai/signin?"
+        f"https://app.quickinsights.ai/login?"
         f"integrationConnected=true&"
         f"service-id=shopify&"
         f"shopify_login_success=true&"
