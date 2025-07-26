@@ -114,12 +114,16 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
     
     # Register webhooks immediately
     await register_webhooks(shop, token_response['access_token'])
+
+    shop_name=shop.replace('.myshopify.com', '')
+    
+    expected_url = f"https://admin.shopify.com/store/{shop_name}/app/grant"
     
     # Immediate redirect to embedded app (required for automated checks)
-    host_param = query_params.get('host', '')
-    embedded_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}?shop={shop}&host={host_param}" if host_param else f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}?shop={shop}"
-    
-    return RedirectResponse(url=embedded_url, status_code=302)
+    # host_param = query_params.get('host', '')
+    # embedded_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}?shop={shop}&host={host_param}" if host_param else f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}?shop={shop}"
+
+    return RedirectResponse(url=expected_url, status_code=302)
 
 async def register_webhooks(shop: str, access_token: str):
     webhooks = [
