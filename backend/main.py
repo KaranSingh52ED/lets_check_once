@@ -238,164 +238,22 @@ async def auth_callback(request: Request, session: Session = Depends(get_session
     # Register mandatory webhooks asynchronously
     asyncio.create_task(register_webhooks(shop, access_token))
     
-    # Redirect to embedded app - THIS IS THE KEY FIX
-    # For embedded apps, redirect to the Shopify admin with the app embedded
-    redirect_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
+    # Generate user ID for this installation
+    user_id = str(uuid.uuid4())
+    encoded_user_id = base64.urlsafe_b64encode(user_id.encode()).decode()
+    
+    # Redirect to your external frontend with success parameters
+    redirect_url = (
+        f"https://app.quickinsights.ai/dashboard?"
+        f"integrationConnected=true&"
+        f"service-id=shopify&"
+        f"shopify_login_success=true&"
+        f"shop={quote(shop)}&"
+        f"uid={encoded_user_id}&"
+        f"access_token_set=true"
+    )
     
     return RedirectResponse(url=redirect_url, status_code=302)
-
-@app.get("/app")
-async def app_home(request: Request):
-    """Main app interface - this is where your embedded app UI goes"""
-    shop = request.query_params.get('shop')
-    
-    if not shop:
-        return HTMLResponse("""
-        <html>
-            <head><title>QuickInsights.ai</title></head>
-            <body>
-                <h1>Error: Shop parameter missing</h1>
-                <p>This app must be accessed through Shopify admin.</p>
-            </body>
-        </html>
-        """, status_code=400)
-    
-    # Basic embedded app HTML with App Bridge
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>QuickInsights.ai</title>
-        <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
-        <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
-        <style>
-            body {{ 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                margin: 20px;
-                background-color: #f6f6f7;
-            }}
-            .container {{
-                max-width: 800px;
-                margin: 0 auto;
-                background: white;
-                padding: 24px;
-                border-radius: 8px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }}
-            .header {{
-                text-align: center;
-                margin-bottom: 32px;
-            }}
-            .logo {{
-                font-size: 24px;
-                font-weight: bold;
-                color: #202223;
-                margin-bottom: 8px;
-            }}
-            .subtitle {{
-                color: #6d7175;
-                font-size: 16px;
-            }}
-            .status {{
-                background: #d4f2d4;
-                color: #1a7f1a;
-                padding: 12px 16px;
-                border-radius: 6px;
-                margin: 16px 0;
-                text-align: center;
-            }}
-            .feature-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                gap: 16px;
-                margin-top: 24px;
-            }}
-            .feature-card {{
-                border: 1px solid #e1e3e5;
-                border-radius: 6px;
-                padding: 16px;
-            }}
-            .feature-title {{
-                font-weight: 600;
-                margin-bottom: 8px;
-                color: #202223;
-            }}
-            .feature-desc {{
-                color: #6d7175;
-                font-size: 14px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <div class="logo">🚀 QuickInsights.ai</div>
-                <div class="subtitle">AI-Powered Analytics for Your Shopify Store</div>
-            </div>
-            
-            <div class="status">
-                ✅ Successfully connected to {shop}
-            </div>
-            
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <div class="feature-title">Product Analytics</div>
-                    <div class="feature-desc">Get insights into your product performance with AI-powered analytics.</div>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-title">Customer Insights</div>
-                    <div class="feature-desc">Understand your customers better with advanced segmentation.</div>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-title">Sales Forecasting</div>
-                    <div class="feature-desc">Predict future sales trends using machine learning algorithms.</div>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-title">Automated Reporting</div>
-                    <div class="feature-desc">Receive weekly reports with actionable business insights.</div>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-            // Initialize Shopify App Bridge
-            var AppBridge = window['app-bridge'];
-            var createApp = AppBridge.default;
-            var app = createApp({{
-                apiKey: '{SHOPIFY_API_KEY}',
-                shop: '{shop}',
-                forceRedirect: true
-            }});
-            
-            // Set up navigation
-            var NavigationMenu = AppBridge.NavigationMenu;
-            var navigationMenu = NavigationMenu.create(app, {{
-                items: [
-                    {{
-                        id: 'dashboard',
-                        label: 'Dashboard',
-                        destination: '/app?shop={shop}'
-                    }},
-                    {{
-                        id: 'analytics',
-                        label: 'Analytics',
-                        destination: '/app/analytics?shop={shop}'
-                    }},
-                    {{
-                        id: 'settings',
-                        label: 'Settings', 
-                        destination: '/app/settings?shop={shop}'
-                    }}
-                ]
-            }});
-        </script>
-    </body>
-    </html>
-    """
-    
-    return HTMLResponse(content=html_content)
 
 async def register_webhooks(shop: str, access_token: str):
     """Register mandatory GDPR and app webhooks"""
@@ -643,6 +501,25 @@ async def health_check():
         "status": "healthy", 
         "service": "quickinsights-shopify-backend",
         "version": "1.0.0"
+    }
+
+@app.get("/api/connection/status/{shop_domain}")
+async def get_connection_status(shop_domain: str, session: Session = Depends(get_session)):
+    """Check if shop is connected and active"""
+    shop = session.exec(select(Shop).where(Shop.shop_domain == shop_domain)).first()
+    
+    if not shop:
+        return {
+            "connected": False,
+            "shop_domain": shop_domain,
+            "message": "Shop not found"
+        }
+    
+    return {
+        "connected": shop.is_active,
+        "shop_domain": shop.shop_domain,
+        "scope": shop.scope,
+        "message": "Connected successfully" if shop.is_active else "Connection inactive"
     }
 
 if __name__ == "__main__":
